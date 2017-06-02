@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
+#include <cassert>
 #include "dense_array.h"
 
 namespace hyperloglog_hip {
@@ -16,6 +17,7 @@ class distinct_counter {
   distinct_counter(size_t num_bucket_bits = 12)
     : num_bucket_bits_(num_bucket_bits), M_(1 << num_bucket_bits),
       c_(0), s_(1 << num_bucket_bits) {}
+
 
   void insert(const key_type &v) {
     static constexpr uint64_t num_register_bits = NumRegisterBits;
@@ -36,6 +38,30 @@ class distinct_counter {
       if (b_new < register_limit) {
         s_ += 1.0 / (uint64_t(1) << b_new);
       }
+    }
+  }
+
+  void merge(distinct_counter& other) {
+    static constexpr uint64_t num_register_bits = NumRegisterBits;
+    static constexpr uint64_t register_limit = (uint64_t(1) << num_register_bits) - 1;
+
+    assert(num_bucket_bits_ == other.num_bucket_bits_);
+
+    const size_t num_buckets = 1 << num_bucket_bits_;
+
+    for (size_t r = 0; r < num_buckets; ++r) {
+        const uint64_t b = M_.get(r);
+        const uint64_t b_other = other.M_.get(r);
+
+        if (b < b_other) {
+          c_ += 1.0 / (s_/num_buckets);
+          s_ -= 1.0/(1 << b);
+          const uint64_t orred = M_.get(r) | b_other;
+          M_.set(r, orred);
+          if (b_other < register_limit){
+            s_ += 1.0/(1 << b_other);
+          }
+        }
     }
   }
 
